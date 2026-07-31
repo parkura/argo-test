@@ -1,0 +1,49 @@
+# One ApplicationSet for all deployables.
+#
+# `targetRevision: 1.0.*` re-resolves to the newest chart version on
+# refresh; deploys are manual syncs (UI or argocd CLI).
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: sim-services
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - list:
+        elements:
+          # ---- 3 backend services (shared image, batch sync) ----
+          - { name: gateway-service, group: graphql }
+          - { name: order-service, group: graphql }
+          - { name: inventory-service, group: graphql }
+          # ---- 2 frontends ----
+          - { name: web-app, group: frontend }
+          - { name: admin-app, group: frontend }
+          # ---- 1 cron ----
+          - { name: ticker-cron, group: cronjob }
+  template:
+    metadata:
+      name: "{{ .name }}"
+      labels:
+        service-group: "{{ .group }}"
+    spec:
+      project: default
+      source:
+        repoURL: ghcr.io/parkura/helm-charts
+        chart: "{{ .name }}"
+        targetRevision: 1.0.*
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: sim
+      syncPolicy:
+        # no `automated:` — deploys happen via the batch-sync script or
+        # manual sync
+        syncOptions:
+          - CreateNamespace=true
+        retry:
+          limit: 3
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 2m

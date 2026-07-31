@@ -1,0 +1,8 @@
+apiVersion: v2
+name: admin-app
+description: GitOps deployment simulation — admin-app
+type: application
+# version/appVersion are placeholders; CI sets them via
+# helm package --version 1.0.<run> --app-version 1.0.<run>-<sha7>
+version: 0.0.0
+appVersion: "0.0.0"

@@ -1,0 +1,9 @@
+app: order-service
+image:
+  registry: ghcr.io/parkura
+  name: shared-backend
+  # tag stays null: the deployment falls back to .Chart.AppVersion,
+  # which CI stamps with the image tag built in the same run
+  tag: null
+replicas: 2
+peers: []
