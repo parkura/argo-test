@@ -137,3 +137,31 @@ jobs:
             helm push "$tgz" "oci://ghcr.io/$OWNER/helm-charts"
           done
           echo "Pushed $(ls dist | wc -l) charts at version $CHART_VERSION (appVersion $APP_VERSION)"
+
+  # Runs on the self-hosted runner (same machine as the kind cluster).
+  # --core mode talks to the cluster through the kubeconfig directly —
+  # no argocd-server login, no token secret. The kube context is pinned
+  # so the job can never act on any other cluster in the kubeconfig.
+  sync:
+    runs-on: self-hosted
+    needs: charts
+    env:
+      ARGOCD_OPTS: --core --kube-context kind-gitops-sim
+    steps:
+      - name: Batch-sync backend service group
+        run: |
+          set -euo pipefail
+          # hard refresh: re-resolve 1.0.* against ghcr NOW, not on the
+          # next polling cycle
+          argocd app list -l service-group=graphql -o name \
+            | xargs -r -n 1 argocd app get --hard-refresh > /dev/null
+          argocd app sync -l service-group=graphql --async
+
+      - name: Sync frontends and cron
+        run: |
+          set -euo pipefail
+          for group in frontend cronjob; do
+            argocd app list -l "service-group=$group" -o name \
+              | xargs -r -n 1 argocd app get --hard-refresh > /dev/null
+            argocd app sync -l "service-group=$group" --async
+          done
