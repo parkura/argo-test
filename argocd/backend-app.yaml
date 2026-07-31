@@ -1,0 +1,46 @@
+# All backend services in ONE Application (multi-source: one OCI chart per
+# service). This is what makes their deploys synchronized: a single sync
+# operation applies every backend Deployment at the same moment, so the
+# rolling restarts run in parallel instead of drifting apart — waves and
+# same-instant applies only exist WITHIN one Application.
+#
+# Sync waves order resources inside that operation:
+#   wave 0 (default) — order-service, inventory-service: applied together,
+#                      roll simultaneously
+#   wave 1           — gateway-service (values.syncWave): applied only
+#                      after wave 0 is healthy, so the gateway restarts
+#                      against fully-updated peers
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: backend
+  namespace: argocd
+  labels:
+    service-group: graphql
+spec:
+  project: default
+  sources:
+    - repoURL: ghcr.io/parkura/helm-charts
+      chart: order-service
+      targetRevision: 1.0.*
+    - repoURL: ghcr.io/parkura/helm-charts
+      chart: inventory-service
+      targetRevision: 1.0.*
+    - repoURL: ghcr.io/parkura/helm-charts
+      chart: gateway-service
+      targetRevision: 1.0.*
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: sim
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 2m

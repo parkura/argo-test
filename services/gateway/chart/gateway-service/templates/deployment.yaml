@@ -4,6 +4,11 @@ metadata:
   name: {{ .Values.app }}
   labels:
     app: {{ .Values.app }}
+  annotations:
+    # orders THIS resource within the backend Application's sync:
+    # same wave = applied simultaneously; higher wave waits for lower
+    # waves to be healthy first
+    argocd.argoproj.io/sync-wave: {{ .Values.syncWave | default "0" | quote }}
 spec:
   replicas: {{ .Values.replicas }}
   selector:

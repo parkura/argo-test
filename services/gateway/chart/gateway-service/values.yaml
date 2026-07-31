@@ -7,3 +7,5 @@ image:
   tag: null
 replicas: 2
 peers: [order-service, inventory-service]
+# gateway restarts only after order/inventory are healthy
+syncWave: "1"

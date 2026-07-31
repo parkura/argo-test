@@ -10,13 +10,16 @@ metadata:
 spec:
   goTemplate: true
   goTemplateOptions: ["missingkey=error"]
+  syncPolicy:
+    # removing an element deletes its Application but ORPHANS the deployed
+    # resources instead of cascading — no pod deletion on regrouping
+    preserveResourcesOnDeletion: true
   generators:
     - list:
         elements:
-          # ---- 3 backend services (shared image, batch sync) ----
-          - { name: gateway-service, group: graphql }
-          - { name: order-service, group: graphql }
-          - { name: inventory-service, group: graphql }
+          # backend services are NOT here — they deploy together as one
+          # multi-source Application (backend-app.yaml) so their rolling
+          # restarts are synchronized
           # ---- 2 frontends ----
           - { name: web-app, group: frontend }
           - { name: admin-app, group: frontend }
