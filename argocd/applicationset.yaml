@@ -37,8 +37,11 @@ spec:
         server: https://kubernetes.default.svc
         namespace: sim
       syncPolicy:
-        # no `automated:` — deploys happen via the batch-sync script or
-        # manual sync
+        # fully hands-off: when 1.0.* resolves to a new chart version,
+        # Argo deploys it without a manual sync
+        automated:
+          prune: true
+          selfHeal: true
         syncOptions:
           - CreateNamespace=true
         retry:
