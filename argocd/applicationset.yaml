@@ -1,7 +1,18 @@
-# One ApplicationSet for all deployables.
+# One ApplicationSet for ALL deployables, discovered from the repo tree —
+# the git directory generator scans this repo on main and stamps out one
+# Application per chart directory. Adding/removing a service directory
+# adds/removes its Application automatically (cascade deletes its
+# resources); nobody maintains a service list anywhere.
 #
-# `targetRevision: "*"` (newest stable, any major) re-resolves to the newest chart version on
-# refresh; deploys are manual syncs (UI or argocd CLI).
+# targetRevision "*" = newest stable semver, any major — CI's versioning
+# scheme never requires spec edits (prereleases excluded).
+#
+# ignoreApplicationDifferences keeps the appset controller from stamping
+# over MANUAL operations on generated apps: without it, a UI rollback
+# (which disables auto-sync) or a targetRevision pin would be reverted on
+# the next appset reconcile (~minutes). With it, manual holds persist
+# until a human clears them — there is no CI re-apply in this model, so
+# holds are durable; pinned apps need periodic review.
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
@@ -11,37 +22,37 @@ spec:
   goTemplate: true
   goTemplateOptions: ["missingkey=error"]
   syncPolicy:
-    # removing an element deletes its Application but ORPHANS the deployed
-    # resources instead of cascading — no pod deletion on regrouping
-    preserveResourcesOnDeletion: true
+    # element removed on purpose (service deleted from repo) should clean
+    # up its resources — cascade is the desired behavior here
+    preserveResourcesOnDeletion: false
+  ignoreApplicationDifferences:
+    - jsonPointers:
+        - /spec/syncPolicy
+        - /spec/source/targetRevision
   generators:
-    - list:
-        elements:
-          # backend services are NOT here — they deploy together as one
-          # multi-source Application (backend-app.yaml) so their rolling
-          # restarts are synchronized
-          # ---- 2 frontends ----
-          - { name: web-app, group: frontend }
-          - { name: admin-app, group: frontend }
-          # ---- 1 cron ----
-          - { name: ticker-cron, group: cronjob }
+    - git:
+        repoURL: https://github.com/parkura/argo-test.git
+        revision: main
+        directories:
+          - path: services/*/chart/*
+          - path: apps/*/chart/*
+          - path: crons/*/chart/*
   template:
     metadata:
-      name: "{{ .name }}"
+      name: "{{ .path.basename }}"
       labels:
-        service-group: "{{ .group }}"
+        # first path segment: services / apps / crons
+        service-group: "{{ index .path.segments 0 }}"
     spec:
       project: default
       source:
         repoURL: ghcr.io/parkura/helm-charts
-        chart: "{{ .name }}"
+        chart: "{{ .path.basename }}"
         targetRevision: "*"
       destination:
         server: https://kubernetes.default.svc
         namespace: sim
       syncPolicy:
-        # fully hands-off: when 1.0.* resolves to a new chart version,
-        # Argo deploys it without a manual sync
         automated:
           prune: true
           selfHeal: true

@@ -6,6 +6,6 @@ image:
   # which CI stamps with the image tag built in the same run
   tag: null
 replicas: 2
-peers: [order-service, inventory-service]
+peers: [order-service, inventory-service, web-app, admin-app]
 # gateway restarts only after order/inventory are healthy
 syncWave: "1"
