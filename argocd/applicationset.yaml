@@ -52,18 +52,12 @@ spec:
       destination:
         server: https://kubernetes.default.svc
         namespace: sim
-      # live operational edits survive auto-sync/selfHeal: any Deployment
-      # field last set by a manual tool (kubectl scale/edit/patch, k9s,
-      # headlamp) is ignored when diffing, and RespectIgnoreDifferences
-      # keeps syncs from overwriting it. Fields never hand-touched keep
-      # following the chart — so chart-driven changes still deploy.
-      # ops-owned FIELDS on workload kinds: replicas and container
-      # resources belong to operators (any tool — kubectl, Headlamp, …),
-      # everything else follows the chart. Field-based ignores are
-      # tool-agnostic and reliably respected at sync time, unlike
-      # managedFieldsManagers matching (exact manager-name strings,
-      # not honored by client-side apply on write).
-      # Trade-off: chart changes to THESE fields no longer deploy.
+      # ops-owned fields: replicas and container resources on Deployments
+      # belong to operators — live edits from any tool (kubectl, Headlamp,
+      # …) survive auto-sync/selfHeal. Everything else follows the chart
+      # and hand-edits to it revert within seconds. Requires the
+      # RespectIgnoreDifferences sync option below.
+      # Trade-off: chart changes to these two fields no longer deploy.
       ignoreDifferences:
         - group: apps
           kind: Deployment
