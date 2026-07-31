@@ -37,7 +37,7 @@ on:
         required: false
         default: ""
       revision:
-        description: "Chart version to pin (empty = each app's previous deployed revision)"
+        description: "Chart version to pin (empty = each app's previous deployed revision; 'list' = show deployed history + registry versions, change nothing)"
         required: false
         default: ""
 
@@ -74,16 +74,53 @@ jobs:
           fi
           echo "targets: $apps"
 
+          # registry tag listing for a chart (public ghcr; ACR equivalent:
+          # az acr repository show-tags)
+          chart_tags() {
+            local chart="$1" token
+            token=$(curl -s "https://ghcr.io/token?scope=repository:parkura/helm-charts/${chart}:pull" \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+            curl -s -H "Authorization: Bearer $token" \
+              "https://ghcr.io/v2/parkura/helm-charts/${chart}/tags/list" \
+              | python3 -c 'import json,sys; print(" ".join(sorted(json.load(sys.stdin).get("tags",[]))))'
+          }
+
+          # revision=list → print deployed history + available versions, change nothing
+          if [ "$REVISION" = "list" ]; then
+            {
+              echo "## available rollback targets"
+              for app in $apps; do
+                echo ""
+                echo "### $app"
+                echo "deployed history (oldest → newest):"
+                $kc get application "$app" \
+                  -o jsonpath='{range .status.history[*]}{.revision}{" @ "}{.deployedAt}{"\n"}{end}' \
+                  | sed 's/^/    /'
+                echo "in registry: $(chart_tags "$app")"
+              done
+            } | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "list mode — nothing changed. Re-run with a chosen revision."
+            exit 0
+          fi
+
           for app in $apps; do
             rev="$REVISION"
             if [ -z "$rev" ]; then
               # second-to-last entry in the app's own deploy history
               rev=$($kc get application "$app" \
                 -o jsonpath='{.status.history[*].revision}' | awk 'NF>1{print $(NF-1)}')
-            fi
-            if [ -z "$rev" ]; then
-              echo "::warning::$app has no previous revision in history — skipped"
-              continue
+              if [ -z "$rev" ]; then
+                echo "::warning::$app has no previous revision in history — skipped"
+                continue
+              fi
+            else
+              # explicit version: verify the chart exists in the registry
+              # BEFORE pinning (a bad pin silently breaks resolution)
+              tags=$(chart_tags "$app")
+              if ! printf '%s\n' $tags | grep -qx "$rev"; then
+                echo "::error::$app: version '$rev' not found in registry. Available: $tags"
+                exit 1
+              fi
             fi
             $kc patch application "$app" --type merge \
               -p "{\"spec\":{\"source\":{\"targetRevision\":\"$rev\"}}}"
