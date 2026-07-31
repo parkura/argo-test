@@ -1,6 +1,13 @@
 # One-click rollback from the GitHub UI (Actions → fleet-rollback → Run
-# workflow). Pins each targeted app to its PREVIOUS deployed revision
-# (from its own Argo history), or to an explicit version if given.
+# workflow).
+#
+#   scope:    all | services | apps | crons  (label-based groups)
+#             single  (one app — set the `app` input)
+#   app:      app name, used only when scope=single (e.g. gateway-service)
+#   revision: explicit chart version (e.g. 1.0.12) — the image follows the
+#             chart automatically (each chart's appVersion is the image tag
+#             built in the same run). Leave EMPTY to use each app's own
+#             previous deployed revision from its Argo history.
 #
 # Semantics under release-supersedes: auto-sync stays ON and enforces the
 # pin (apps go green on the old version); the pin survives until the next
@@ -14,12 +21,23 @@ name: fleet-rollback
 on:
   workflow_dispatch:
     inputs:
-      target:
-        description: "App name to roll back, or 'all' for every service"
+      scope:
+        description: "What to roll back"
         required: true
+        type: choice
         default: "all"
+        options:
+          - all
+          - services
+          - apps
+          - crons
+          - single
+      app:
+        description: "App name (only used when scope=single)"
+        required: false
+        default: ""
       revision:
-        description: "Explicit chart version (leave empty = each app's previous deployed revision)"
+        description: "Chart version to pin (empty = each app's previous deployed revision)"
         required: false
         default: ""
 
@@ -27,18 +45,35 @@ jobs:
   rollback:
     runs-on: self-hosted
     steps:
-      - name: Pin app(s) to rollback revision
+      - name: Resolve targets and pin
         env:
-          TARGET: ${{ inputs.target }}
+          SCOPE: ${{ inputs.scope }}
+          APP: ${{ inputs.app }}
           REVISION: ${{ inputs.revision }}
         run: |
           set -euo pipefail
           kc="kubectl --context kind-gitops-sim -n argocd"
-          if [ "$TARGET" = "all" ]; then
-            apps=$($kc get applications -l service-group -o jsonpath='{.items[*].metadata.name}')
-          else
-            apps="$TARGET"
+
+          case "$SCOPE" in
+            all)
+              apps=$($kc get applications -l service-group -o jsonpath='{.items[*].metadata.name}')
+              ;;
+            services|apps|crons)
+              apps=$($kc get applications -l "service-group=$SCOPE" -o jsonpath='{.items[*].metadata.name}')
+              ;;
+            single)
+              if [ -z "$APP" ]; then
+                echo "::error::scope=single requires the app input"; exit 1
+              fi
+              apps="$APP"
+              ;;
+          esac
+
+          if [ -z "$apps" ]; then
+            echo "::error::no applications matched scope=$SCOPE"; exit 1
           fi
+          echo "targets: $apps"
+
           for app in $apps; do
             rev="$REVISION"
             if [ -z "$rev" ]; then

@@ -52,12 +52,28 @@ spec:
       destination:
         server: https://kubernetes.default.svc
         namespace: sim
+      # live operational edits survive auto-sync/selfHeal: any Deployment
+      # field last set by a manual tool (kubectl scale/edit/patch, k9s,
+      # headlamp) is ignored when diffing, and RespectIgnoreDifferences
+      # keeps syncs from overwriting it. Fields never hand-touched keep
+      # following the chart — so chart-driven changes still deploy.
+      ignoreDifferences:
+        - group: apps
+          kind: Deployment
+          managedFieldsManagers:
+            - kubectl
+            - kubectl-edit
+            - kubectl-patch
+            - kubectl-scale
+            - k9s
+            - headlamp
       syncPolicy:
         automated:
           prune: true
           selfHeal: true
         syncOptions:
           - CreateNamespace=true
+          - RespectIgnoreDifferences=true
         retry:
           limit: 3
           backoff:
