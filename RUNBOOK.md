@@ -17,6 +17,12 @@ argocd login localhost:8080 --username admin --insecure
 # register ghcr as an OCI helm repo + create the appset
 kubectl apply -f argocd/repo-secret.yaml
 kubectl apply -f argocd/applicationset.yaml
+
+# faster change detection: default reconciliation is 3 min, drop it to 15s
+# (fine for 6 apps against ghcr; too chatty for a real fleet)
+kubectl -n argocd patch configmap argocd-cm --type merge -p '{"data":{"timeout.reconciliation":"15s"}}'
+kubectl -n argocd rollout restart statefulset argocd-application-controller
+kubectl -n argocd rollout restart deployment argocd-repo-server
 ```
 
 After the FIRST CI run: ghcr packages are private by default, even in a
@@ -30,8 +36,8 @@ Until then Argo shows `unable to resolve` and pods hit ImagePullBackOff.
 ```bash
 # 1. change something (e.g. src/server.mjs), push to main
 # 2. wait for the ci-cd-oci workflow to finish (pushes images + 6 charts)
-# 3. apps flip to OutOfSync once Argo re-resolves 1.0.* (~3 min polling,
-#    or force it: argocd app get <app> --hard-refresh)
+# 3. apps flip to OutOfSync once Argo re-resolves 1.0.* (≤15s with the
+#    reconciliation override; force it: argocd app get <app> --hard-refresh)
 # 4. sync from the UI, or:
 argocd app sync gateway-service order-service inventory-service
 ```
@@ -67,8 +73,8 @@ Note what this demonstrates: the rollback state lives in the Application
 spec, not in git — the audit-trail tradeoff of the no-write-back model.
 
 **Update latency.** Push to main, run nothing, and time how long until
-apps flip to OutOfSync (default repo polling ~3 min, plus OCI index
-cache) — that lag is the cost of having no explicit trigger.
+apps flip to OutOfSync (≤15s with the reconciliation override; ~3 min on
+Argo defaults) — that lag is the cost of having no explicit trigger.
 
 ## 4. Reset
 
