@@ -1,0 +1,56 @@
+# One-click rollback from the GitHub UI (Actions → fleet-rollback → Run
+# workflow). Pins each targeted app to its PREVIOUS deployed revision
+# (from its own Argo history), or to an explicit version if given.
+#
+# Semantics under release-supersedes: auto-sync stays ON and enforces the
+# pin (apps go green on the old version); the pin survives until the next
+# release, when reset-holds clears it. A permanent rollback = git revert
+# of the bad commit, for which this buys time.
+#
+# Self-hosted for the same reason as reset-holds: the kind cluster only
+# exists on the laptop. In a real setup: ubuntu-latest + OIDC + AKS.
+name: fleet-rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "App name to roll back, or 'all' for every service"
+        required: true
+        default: "all"
+      revision:
+        description: "Explicit chart version (leave empty = each app's previous deployed revision)"
+        required: false
+        default: ""
+
+jobs:
+  rollback:
+    runs-on: self-hosted
+    steps:
+      - name: Pin app(s) to rollback revision
+        env:
+          TARGET: ${{ inputs.target }}
+          REVISION: ${{ inputs.revision }}
+        run: |
+          set -euo pipefail
+          kc="kubectl --context kind-gitops-sim -n argocd"
+          if [ "$TARGET" = "all" ]; then
+            apps=$($kc get applications -l service-group -o jsonpath='{.items[*].metadata.name}')
+          else
+            apps="$TARGET"
+          fi
+          for app in $apps; do
+            rev="$REVISION"
+            if [ -z "$rev" ]; then
+              # second-to-last entry in the app's own deploy history
+              rev=$($kc get application "$app" \
+                -o jsonpath='{.status.history[*].revision}' | awk 'NF>1{print $(NF-1)}')
+            fi
+            if [ -z "$rev" ]; then
+              echo "::warning::$app has no previous revision in history — skipped"
+              continue
+            fi
+            $kc patch application "$app" --type merge \
+              -p "{\"spec\":{\"source\":{\"targetRevision\":\"$rev\"}}}"
+            echo "$app pinned to $rev"
+          done
