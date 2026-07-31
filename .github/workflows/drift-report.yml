@@ -1,0 +1,68 @@
+# Drift visibility: everything that survives auto-sync is either
+# protected by policy (replicas/resources) or silently persistent
+# (hand-added list items, unmanaged resources). This report enumerates
+# ALL of it, so nothing lives in the cluster unnoticed:
+#   - every Deployment field owned by a manager other than Argo/k8s
+#   - every resource in the namespace that no Application manages
+# Run on demand or on the weekly schedule; output lands in the job
+# summary page.
+name: drift-report
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 8 * * 1" # Monday 08:00 UTC
+
+jobs:
+  report:
+    runs-on: self-hosted
+    steps:
+      - name: Enumerate ops-owned fields and unmanaged resources
+        run: |
+          set -euo pipefail
+          kubectl --context kind-gitops-sim -n sim get deploy,svc,cronjob -o json --show-managed-fields \
+          | python3 -c '
+          import json, sys
+
+          ARGO_MANAGERS = {"argocd-controller", "argocd-application-controller"}
+          SYSTEM_MANAGERS = {"kube-controller-manager", "kube-scheduler"}
+
+          def walk(fields, prefix=""):
+              for key, val in fields.items():
+                  if key == ".":
+                      continue
+                  name = key.split(":", 1)[-1]
+                  path = f"{prefix}.{name}" if prefix else name
+                  if isinstance(val, dict) and val:
+                      yield from walk(val, path)
+                  else:
+                      yield path
+
+          items = json.load(sys.stdin)["items"]
+          drift = []
+          for item in items:
+              kind = item["kind"]
+              name = item["metadata"]["name"]
+              managed = "argocd.argoproj.io/tracking-id" in item["metadata"].get("annotations", {}) \
+                        or "app.kubernetes.io/instance" in item["metadata"].get("labels", {})
+              if not managed:
+                  drift.append((kind, name, "(unmanaged resource — not rendered by any chart)", "-"))
+                  continue
+              for mf in item["metadata"].get("managedFields", []):
+                  mgr = mf.get("manager", "?")
+                  if mgr in ARGO_MANAGERS or mgr in SYSTEM_MANAGERS:
+                      continue
+                  if mf.get("subresource") == "status":
+                      continue
+                  paths = sorted(set(walk(mf.get("fieldsV1", {}))))[:8]
+                  if paths:
+                      drift.append((kind, name, mgr, ", ".join(paths)))
+
+          if not drift:
+              print("no ops-owned fields, no unmanaged resources — cluster matches git exactly")
+          else:
+              print(f"{len(drift)} survivor(s) of auto-sync:\n")
+              print(f"{'KIND':<12} {'NAME':<25} {'OWNER':<30} FIELDS")
+              for kind, name, mgr, paths in drift:
+                  print(f"{kind:<12} {name:<25} {mgr:<30} {paths}")
+          ' | tee -a "$GITHUB_STEP_SUMMARY"
