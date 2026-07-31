@@ -5,5 +5,5 @@ image:
   # tag stays null: the deployment falls back to .Chart.AppVersion,
   # which CI stamps with the image tag built in the same run
   tag: null
-replicas: 3
+replicas: 2
 peers: []

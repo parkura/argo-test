@@ -26,8 +26,13 @@ spec:
     # up its resources — cascade is the desired behavior here
     preserveResourcesOnDeletion: false
   ignoreApplicationDifferences:
+    # ONLY the hold-related knobs: the automated toggle (UI rollbacks
+    # disable it) and version pins. Everything else under syncPolicy
+    # (syncOptions, retry) must keep reconciling from this template —
+    # ignoring all of /spec/syncPolicy blocks template updates like
+    # RespectIgnoreDifferences from ever reaching existing apps.
     - jsonPointers:
-        - /spec/syncPolicy
+        - /spec/syncPolicy/automated
         - /spec/source/targetRevision
   generators:
     - git:
