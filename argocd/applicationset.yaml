@@ -1,6 +1,6 @@
 # One ApplicationSet for all deployables.
 #
-# `targetRevision: 1.0.*` re-resolves to the newest chart version on
+# `targetRevision: "*"` (newest stable, any major) re-resolves to the newest chart version on
 # refresh; deploys are manual syncs (UI or argocd CLI).
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
@@ -35,7 +35,7 @@ spec:
       source:
         repoURL: ghcr.io/parkura/helm-charts
         chart: "{{ .name }}"
-        targetRevision: 1.0.*
+        targetRevision: "*"
       destination:
         server: https://kubernetes.default.svc
         namespace: sim

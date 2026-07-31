@@ -138,18 +138,59 @@ jobs:
           done
           echo "Pushed $(ls dist | wc -l) charts at version $CHART_VERSION (appVersion $APP_VERSION)"
 
-  # A new release supersedes any manual rollback: UI rollbacks disable
-  # auto-sync (so the rollback holds), and this job flips it back on when
-  # the next version ships — Argo then deploys the newest chart within
-  # one reconciliation. Runs on the self-hosted runner (same machine as
-  # the kind cluster); appset-managed apps don't need this because the
-  # ApplicationSet controller re-stamps their template policy itself.
-  enable-autosync:
+  # Regenerates the backend Application from the repo layout and applies
+  # it — one source per services/*/chart/* directory, so adding/removing
+  # a service never means editing an app spec (prune cleans up removed
+  # services). Re-applying the full spec also restores automated sync,
+  # so a new release supersedes any manual rollback/pin/toggle.
+  #
+  # Self-hosted because the kind cluster only exists on the laptop; in a
+  # real setup this is ubuntu-latest + azure/login (OIDC) + AKS creds.
+  apply-backend-app:
     runs-on: self-hosted
     needs: charts
     steps:
-      - name: Re-enable auto-sync on backend
+      - uses: actions/checkout@v4
+
+      - name: Render backend app from services/ and apply
         run: |
-          kubectl --context kind-gitops-sim -n argocd patch application backend \
-            --type merge \
-            -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}'
+          set -euo pipefail
+          out="$RUNNER_TEMP/backend-app.yaml"
+          cat > "$out" <<'HEADER'
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: backend
+            namespace: argocd
+            labels:
+              service-group: graphql
+          spec:
+            project: default
+            sources:
+          HEADER
+          for chart in services/*/chart/*/; do
+            name=$(basename "$chart")
+            {
+              echo "    - repoURL: ghcr.io/parkura/helm-charts"
+              echo "      chart: $name"
+              echo "      targetRevision: \"*\""
+            } >> "$out"
+          done
+          cat >> "$out" <<'FOOTER'
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: sim
+            syncPolicy:
+              automated:
+                prune: true
+                selfHeal: true
+              syncOptions:
+                - CreateNamespace=true
+              retry:
+                limit: 3
+                backoff:
+                  duration: 10s
+                  factor: 2
+                  maxDuration: 2m
+          FOOTER
+          kubectl --context kind-gitops-sim apply -f "$out"
