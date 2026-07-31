@@ -57,31 +57,20 @@ spec:
       # headlamp) is ignored when diffing, and RespectIgnoreDifferences
       # keeps syncs from overwriting it. Fields never hand-touched keep
       # following the chart — so chart-driven changes still deploy.
+      # ops-owned FIELDS on workload kinds: replicas and container
+      # resources belong to operators (any tool — kubectl, Headlamp, …),
+      # everything else follows the chart. Field-based ignores are
+      # tool-agnostic and reliably respected at sync time, unlike
+      # managedFieldsManagers matching (exact manager-name strings,
+      # not honored by client-side apply on write).
+      # Trade-off: chart changes to THESE fields no longer deploy.
       ignoreDifferences:
         - group: apps
           kind: Deployment
-          managedFieldsManagers:
-            - kubectl
-            - kubectl-edit
-            - kubectl-patch
-            - kubectl-scale
-            - headlamp
-        - group: apps
-          kind: StatefulSet
-          managedFieldsManagers:
-            - kubectl
-            - kubectl-edit
-            - kubectl-patch
-            - kubectl-scale
-            - headlamp
-        - group: argoproj.io
-          kind: Rollout
-          managedFieldsManagers:
-            - kubectl
-            - kubectl-edit
-            - kubectl-patch
-            - kubectl-scale
-            - headlamp
+          jsonPointers:
+            - /spec/replicas
+          jqPathExpressions:
+            - .spec.template.spec.containers[].resources
       syncPolicy:
         automated:
           prune: true
