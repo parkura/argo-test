@@ -137,3 +137,28 @@ jobs:
             helm push "$tgz" "oci://ghcr.io/$OWNER/helm-charts"
           done
           echo "Pushed $(ls dist | wc -l) charts at version $CHART_VERSION (appVersion $APP_VERSION)"
+
+  # A release supersedes all manual holds: UI rollbacks (auto-sync
+  # disabled) and version pins survive BETWEEN releases (the appset's
+  # ignoreApplicationDifferences protects them), and this job clears
+  # them when the next version ships — every app returns to floating
+  # "*" + automated, so the fleet converges on the new release.
+  #
+  # Self-hosted because the kind cluster only exists on the laptop; in a
+  # real setup this is ubuntu-latest + azure/login (OIDC) + AKS creds.
+  reset-holds:
+    runs-on: self-hosted
+    needs: charts
+    steps:
+      - name: Re-enable auto-sync and unpin all generated apps
+        run: |
+          set -euo pipefail
+          for app in $(kubectl --context kind-gitops-sim -n argocd get applications \
+                        -l service-group -o name); do
+            kubectl --context kind-gitops-sim -n argocd patch "$app" --type merge -p '{
+              "spec": {
+                "source": {"targetRevision": "*"},
+                "syncPolicy": {"automated": {"prune": true, "selfHeal": true}}
+              }
+            }'
+          done
