@@ -65,14 +65,28 @@ spec:
             - kubectl-edit
             - kubectl-patch
             - kubectl-scale
-            - k9s
+            - headlamp
+        - group: apps
+          kind: StatefulSet
+          managedFieldsManagers:
+            - kubectl
+            - kubectl-edit
+            - kubectl-patch
+            - kubectl-scale
+            - headlamp
+        - group: argoproj.io
+          kind: Rollout
+          managedFieldsManagers:
+            - kubectl
+            - kubectl-edit
+            - kubectl-patch
+            - kubectl-scale
             - headlamp
       syncPolicy:
         automated:
           prune: true
           selfHeal: true
         syncOptions:
-          - CreateNamespace=true
           - RespectIgnoreDifferences=true
         retry:
           limit: 3
