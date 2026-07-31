@@ -137,3 +137,19 @@ jobs:
             helm push "$tgz" "oci://ghcr.io/$OWNER/helm-charts"
           done
           echo "Pushed $(ls dist | wc -l) charts at version $CHART_VERSION (appVersion $APP_VERSION)"
+
+  # A new release supersedes any manual rollback: UI rollbacks disable
+  # auto-sync (so the rollback holds), and this job flips it back on when
+  # the next version ships — Argo then deploys the newest chart within
+  # one reconciliation. Runs on the self-hosted runner (same machine as
+  # the kind cluster); appset-managed apps don't need this because the
+  # ApplicationSet controller re-stamps their template policy itself.
+  enable-autosync:
+    runs-on: self-hosted
+    needs: charts
+    steps:
+      - name: Re-enable auto-sync on backend
+        run: |
+          kubectl --context kind-gitops-sim -n argocd patch application backend \
+            --type merge \
+            -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}'
