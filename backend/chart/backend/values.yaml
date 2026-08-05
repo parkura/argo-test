@@ -1,0 +1,5 @@
+# Subchart defaults live in each service's own values.yaml.
+# Per-service values are addressable by subchart name, e.g. the
+# emergency escape hatch to pin one service to an older image:
+#   argocd app set backend -p order-service.image.tag=1.0.17-00ca6e4
+# (out of the normal runbook — whole-tier rollback is the supported path)

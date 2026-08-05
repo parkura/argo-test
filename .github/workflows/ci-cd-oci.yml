@@ -4,8 +4,10 @@
 #   1. version — one chart version + one image tag for the run
 #   2. shared-backend built once (serves order/inventory/gateway services)
 #      + independent images for the 2 frontends and the cron (matrix)
-#   3. all 6 charts packaged with --version/--app-version and pushed to
-#      oci://ghcr.io/<owner>/helm-charts
+#   3. charts packaged with --version/--app-version and pushed to
+#      oci://ghcr.io/<owner>/helm-charts — the backend services as ONE
+#      umbrella chart ("backend", subcharts vendored from the tree),
+#      frontends and cron as individual charts
 #
 # VERSIONING RULE (load-bearing): chart --version must be PLAIN semver
 # (1.0.<run>). Argo's `targetRevision: 1.0.*` excludes prerelease versions
@@ -127,7 +129,29 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          for chart in services/*/chart/*/ apps/*/chart/*/ crons/*/chart/*/; do
+
+          # Backend services ship as ONE umbrella chart: subcharts are
+          # discovered from the tree, so adding/removing a service
+          # directory is the only step needed to change the fleet.
+          #
+          # Subchart appVersion must be stamped in place (not via
+          # --app-version, which only reaches the umbrella): the
+          # deployment templates fall back to .Chart.AppVersion for the
+          # image tag, and .Chart inside a subchart is the SUBchart.
+          for c in services/*/chart/*/Chart.yaml; do
+            sed -i "s/^appVersion: .*/appVersion: \"$APP_VERSION\"/" "$c"
+          done
+          {
+            echo "dependencies:"
+            for d in services/*/chart/*/; do
+              echo "  - name: $(basename "$d")"
+              echo "    version: \"0.0.0\""
+              echo "    repository: \"file://../../../$d\""
+            done
+          } >> backend/chart/backend/Chart.yaml
+          helm dependency update backend/chart/backend
+
+          for chart in backend/chart/*/ apps/*/chart/*/ crons/*/chart/*/; do
             helm package "$chart" \
               --version "$CHART_VERSION" \
               --app-version "$APP_VERSION" \

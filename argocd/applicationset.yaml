@@ -39,7 +39,10 @@ spec:
         repoURL: https://github.com/parkura/argo-test.git
         revision: main
         directories:
-          - path: services/*/chart/*
+          # backend services deploy as ONE app (umbrella chart) — the
+          # tier is built/tested/versioned as a unit, so it rolls back
+          # as a unit; services/*/chart/* are its subcharts, not apps
+          - path: backend/chart/*
           - path: apps/*/chart/*
           - path: crons/*/chart/*
   template:

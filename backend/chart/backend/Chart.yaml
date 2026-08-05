@@ -1,0 +1,10 @@
+apiVersion: v2
+name: backend
+description: Umbrella chart — all backend services deploy and roll back as one unit
+type: application
+# version/appVersion are placeholders; CI sets them via
+# helm package --version 1.0.<run> --app-version 1.0.<run>-<sha7>
+version: 0.0.0
+appVersion: "0.0.0"
+# dependencies are appended by CI from the services/*/chart/* tree at
+# package time — adding or removing a service directory is all it takes

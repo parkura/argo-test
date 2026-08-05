@@ -30,7 +30,7 @@ const server = http.createServer(async (req, res) => {
 	}
 
 	res.setHeader("content-type", "application/json");
-	res.end(JSON.stringify({ service: name, version, feature: "v14-feature" }));
+	res.end(JSON.stringify({ service: name, version, feature: "v15-umbrella" }));
 });
 
 server.listen(3000, () => console.log(`${name} ${version} listening on 3000`));
