@@ -34,6 +34,10 @@ spec:
     - jsonPointers:
         - /spec/syncPolicy/automated
         - /spec/source/targetRevision
+        # helm parameter overrides (argocd app set -p) are manual holds
+        # too — e.g. pinning one subchart's image.tag inside the backend
+        # umbrella; without this the appset stomps them within minutes
+        - /spec/source/helm
   generators:
     - git:
         repoURL: https://github.com/parkura/argo-test.git
